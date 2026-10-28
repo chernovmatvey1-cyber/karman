@@ -1,16 +1,16 @@
 import AppKit
 import SwiftUI
 
-protocol ShelfActions: AnyObject {
-    func closeShelf()
+protocol PocketActions: AnyObject {
+    func closePocket()
     func showMenu()
-    func remove(_ item: ShelfItem)
+    func remove(_ item: PocketItem)
     func toggleExpanded()
-    func run(_ action: ShelfAction)
+    func run(_ action: PocketAction)
 }
 
 /// Размеры, общие для SwiftUI и для расчёта зон в AppKit.
-enum ShelfLayout {
+enum PocketLayout {
     static let compact = NSSize(width: 206, height: 208)
     static let expanded = NSSize(width: 320, height: 396)
     static let radius: CGFloat = 22
@@ -21,51 +21,51 @@ enum ShelfLayout {
     /// Номер плитки под точкой (координаты окна, начало снизу) или nil.
     static func tile(at p: NSPoint, width: CGFloat) -> Int? {
         guard p.y <= inset + tilesHeight + 2, p.y >= 0 else { return nil }
-        let count = CGFloat(ShelfAction.instant.count)
+        let count = CGFloat(PocketAction.instant.count)
         let step = (width - inset * 2 + tileSpacing) / count
         let i = Int((p.x - inset) / step)
-        return (0..<ShelfAction.instant.count).contains(i) ? i : nil
+        return (0..<PocketAction.instant.count).contains(i) ? i : nil
     }
 }
 
-struct ShelfView: View {
-    @ObservedObject var shelf: Shelf
-    let actions: ShelfActions
+struct PocketView: View {
+    @ObservedObject var pocket: Pocket
+    let actions: PocketActions
 
-    private var showsChrome: Bool { shelf.hovering && !shelf.isTargeted && !shelf.busy }
+    private var showsChrome: Bool { pocket.hovering && !pocket.isTargeted && !pocket.busy }
 
     var body: some View {
         ZStack {
             Color(white: 0.42).opacity(0.5)
 
             Group {
-                if shelf.isTargeted {
-                    DropTargets(shelf: shelf)
-                } else if shelf.items.isEmpty {
+                if pocket.isTargeted {
+                    DropTargets(pocket: pocket)
+                } else if pocket.items.isEmpty {
                     Text("Перетащите сюда")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.white.opacity(0.32))
-                } else if shelf.expanded {
+                } else if pocket.expanded {
                     VStack(spacing: 0) {
-                        ItemGrid(shelf: shelf, actions: actions)
-                        ActionBar(shelf: shelf, actions: actions)
+                        ItemGrid(pocket: pocket, actions: actions)
+                        ActionBar(pocket: pocket, actions: actions)
                     }
                 } else {
-                    Pile(shelf: shelf, actions: actions)
+                    Pile(pocket: pocket, actions: actions)
                 }
             }
             .transition(.opacity)
 
             VStack {
                 HStack(spacing: 6) {
-                    RoundButton(symbol: "xmark", help: "Закрыть полку") { actions.closeShelf() }
-                    if shelf.expanded {
+                    RoundButton(symbol: "xmark", help: "Закрыть карман") { actions.closePocket() }
+                    if pocket.expanded {
                         RoundButton(symbol: "chevron.backward", help: "Свернуть в стопку") { actions.toggleExpanded() }
                     }
                     Spacer()
-                    if shelf.expanded {
-                        Text(shelf.selection.isEmpty ? shelf.title
-                             : "Выбрано: \(shelf.selection.count)")
+                    if pocket.expanded {
+                        Text(pocket.selection.isEmpty ? pocket.title
+                             : "Выбрано: \(pocket.selection.count)")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.white.opacity(0.75))
                             .lineLimit(1)
@@ -77,16 +77,16 @@ struct ShelfView: View {
                 Spacer()
             }
             .padding(10)
-            .opacity(showsChrome || (shelf.expanded && !shelf.isTargeted) ? 1 : 0)
+            .opacity(showsChrome || (pocket.expanded && !pocket.isTargeted) ? 1 : 0)
 
-            if shelf.busy {
+            if pocket.busy {
                 ProgressView()
                     .controlSize(.small)
                     .padding(14)
                     .background(Circle().fill(.black.opacity(0.35)))
             }
 
-            if let toast = shelf.toast {
+            if let toast = pocket.toast {
                 VStack {
                     Spacer()
                     Label(toast.text, systemImage: toast.symbol)
@@ -95,40 +95,40 @@ struct ShelfView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(Capsule().fill(.black.opacity(0.55)))
-                        .padding(.bottom, shelf.expanded ? 64 : 12)
+                        .padding(.bottom, pocket.expanded ? 64 : 12)
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: ShelfLayout.radius, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: PocketLayout.radius, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: ShelfLayout.radius, style: .continuous)
-                .strokeBorder(.white.opacity(shelf.isTargeted ? 0.35 : 0.1), lineWidth: 1)
+            RoundedRectangle(cornerRadius: PocketLayout.radius, style: .continuous)
+                .strokeBorder(.white.opacity(pocket.isTargeted ? 0.35 : 0.1), lineWidth: 1)
         )
         .animation(.easeOut(duration: 0.15), value: showsChrome)
-        .animation(.easeOut(duration: 0.18), value: shelf.isTargeted)
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: shelf.toast?.text)
+        .animation(.easeOut(duration: 0.18), value: pocket.isTargeted)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: pocket.toast?.text)
         .environment(\.colorScheme, .dark)
     }
 }
 
-// MARK: Пока над полкой несут объекты
+// MARK: Пока над карманом несут объекты
 
 struct DropTargets: View {
-    @ObservedObject var shelf: Shelf
+    @ObservedObject var pocket: Pocket
 
     var body: some View {
         VStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.white.opacity(shelf.dropAction == nil ? 0.13 : 0.04))
+                .fill(.white.opacity(pocket.dropAction == nil ? 0.13 : 0.04))
                 .overlay(
-                    Text("На полку")
+                    Text("В карман")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white.opacity(shelf.dropAction == nil ? 0.85 : 0.35))
+                        .foregroundStyle(.white.opacity(pocket.dropAction == nil ? 0.85 : 0.35))
                 )
-            HStack(spacing: ShelfLayout.tileSpacing) {
-                ForEach(ShelfAction.instant, id: \.self) { action in
-                    let active = shelf.dropAction == action
+            HStack(spacing: PocketLayout.tileSpacing) {
+                ForEach(PocketAction.instant, id: \.self) { action in
+                    let active = pocket.dropAction == action
                     VStack(spacing: 4) {
                         Image(systemName: action.symbol)
                             .font(.system(size: 14, weight: .medium))
@@ -146,10 +146,10 @@ struct DropTargets: View {
                     .scaleEffect(active ? 1.06 : 1)
                 }
             }
-            .frame(height: ShelfLayout.tilesHeight)
+            .frame(height: PocketLayout.tilesHeight)
         }
-        .padding(ShelfLayout.inset)
-        .animation(.easeOut(duration: 0.12), value: shelf.dropAction)
+        .padding(PocketLayout.inset)
+        .animation(.easeOut(duration: 0.12), value: pocket.dropAction)
     }
 }
 
@@ -179,12 +179,12 @@ struct RoundButton: View {
 // MARK: Стопка
 
 struct Pile: View {
-    @ObservedObject var shelf: Shelf
-    let actions: ShelfActions
+    @ObservedObject var pocket: Pocket
+    let actions: PocketActions
     private let angles: [Double] = [-8, 6, 0]
 
     var body: some View {
-        let shown = Array(shelf.items.suffix(3))
+        let shown = Array(pocket.items.suffix(3))
         VStack(spacing: 12) {
             ZStack {
                 ForEach(Array(shown.enumerated()), id: \.element.id) { index, item in
@@ -196,10 +196,10 @@ struct Pile: View {
                 }
             }
             .frame(width: 150, height: 108)
-            .overlay(DragSource(shelf: shelf, items: { shelf.items },
+            .overlay(DragSource(pocket: pocket, items: { pocket.items },
                                 onClick: { _ in actions.toggleExpanded() }))
 
-            Text(shelf.hovering ? "Показать все" : shelf.title)
+            Text(pocket.hovering ? "Показать все" : pocket.title)
                 .font(.system(size: 11, weight: .medium))
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -208,15 +208,15 @@ struct Pile: View {
                 .padding(.vertical, 4)
                 .background(Capsule().fill(.white.opacity(0.16)))
                 .frame(maxWidth: 170)
-                .opacity(shelf.toast == nil ? 1 : 0)
+                .opacity(pocket.toast == nil ? 1 : 0)
         }
         .padding(.top, 14)
-        .animation(.spring(response: 0.3, dampingFraction: 0.75), value: shelf.items.map(\.id))
+        .animation(.spring(response: 0.3, dampingFraction: 0.75), value: pocket.items.map(\.id))
     }
 }
 
 struct Thumb: View {
-    @ObservedObject var item: ShelfItem
+    @ObservedObject var item: PocketItem
     let side: CGFloat
     var animate = true
 
@@ -241,15 +241,15 @@ struct Thumb: View {
 // MARK: Все объекты сеткой
 
 struct ItemGrid: View {
-    @ObservedObject var shelf: Shelf
-    let actions: ShelfActions
+    @ObservedObject var pocket: Pocket
+    let actions: PocketActions
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 3)
 
     var body: some View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 6) {
-                ForEach(shelf.items.reversed()) { item in
-                    GridCell(shelf: shelf, item: item, actions: actions)
+                ForEach(pocket.items.reversed()) { item in
+                    GridCell(pocket: pocket, item: item, actions: actions)
                 }
             }
             .padding(.vertical, 4)
@@ -261,12 +261,12 @@ struct ItemGrid: View {
 }
 
 struct GridCell: View {
-    @ObservedObject var shelf: Shelf
-    @ObservedObject var item: ShelfItem
-    let actions: ShelfActions
+    @ObservedObject var pocket: Pocket
+    @ObservedObject var item: PocketItem
+    let actions: PocketActions
     @State private var hover = false
 
-    private var selected: Bool { shelf.selection.contains(item.id) }
+    private var selected: Bool { pocket.selection.contains(item.id) }
 
     var body: some View {
         VStack(spacing: 5) {
@@ -284,11 +284,11 @@ struct GridCell: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(selected ? Color.accentColor.opacity(0.55) : .white.opacity(hover ? 0.08 : 0))
         )
-        .overlay(DragSource(shelf: shelf,
+        .overlay(DragSource(pocket: pocket,
                             // Тянешь выделенный — уезжает всё выделенное.
-                            items: { selected ? shelf.targets : [item] },
-                            onDoubleClick: { shelf.open([item]) },
-                            onClick: { extend in shelf.click(item, extend: extend) }))
+                            items: { selected ? pocket.targets : [item] },
+                            onDoubleClick: { pocket.open([item]) },
+                            onClick: { extend in pocket.click(item, extend: extend) }))
         .overlay(alignment: .topTrailing) {
             Button { actions.remove(item) } label: {
                 Image(systemName: "xmark.circle.fill")
@@ -298,7 +298,7 @@ struct GridCell: View {
             }
             .buttonStyle(.plain)
             .opacity(hover ? 1 : 0)
-            .help("Убрать с полки")
+            .help("Убрать из кармана")
             .offset(x: 2, y: -2)
         }
         .onHover { hover = $0 }
@@ -306,14 +306,14 @@ struct GridCell: View {
     }
 }
 
-/// Функции полки, всегда на виду в раскрытом виде.
+/// Функции кармана, всегда на виду в раскрытом виде.
 struct ActionBar: View {
-    @ObservedObject var shelf: Shelf
-    let actions: ShelfActions
+    @ObservedObject var pocket: Pocket
+    let actions: PocketActions
 
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(ShelfAction.bar, id: \.self) { action in
+            ForEach(PocketAction.bar, id: \.self) { action in
                 BarButton(symbol: action.symbol, title: action.title, help: action.menuTitle) {
                     actions.run(action)
                 }
@@ -358,8 +358,8 @@ struct BarButton: View {
 // MARK: Мосты в AppKit
 
 struct DragSource: NSViewRepresentable {
-    let shelf: Shelf
-    let items: () -> [ShelfItem]
+    let pocket: Pocket
+    let items: () -> [PocketItem]
     var onDoubleClick: (() -> Void)?
     var onClick: ((Bool) -> Void)?
 
@@ -372,14 +372,14 @@ struct DragSource: NSViewRepresentable {
     func updateNSView(_ view: ItemDragView, context: Context) { update(view) }
 
     private func update(_ view: ItemDragView) {
-        view.shelf = shelf
+        view.pocket = pocket
         view.items = items
         view.onDoubleClick = onDoubleClick
         view.onClick = onClick
     }
 }
 
-/// Полосу кнопок можно тянуть, чтобы передвинуть полку.
+/// Полосу кнопок можно тянуть, чтобы передвинуть карман.
 struct WindowDragArea: NSViewRepresentable {
     final class View: NSView {
         override var mouseDownCanMoveWindow: Bool { true }

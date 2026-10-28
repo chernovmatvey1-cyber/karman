@@ -6,10 +6,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let detector = ShakeDetector()
     private var hotKeys: [HotKey] = []
-    private var controllers: [ShelfController] = []
-    private let maxShelves = 8
+    private var controllers: [PocketController] = []
+    private let maxPockets = 8
     private var releaseWatch: Timer?
-    /// Без App Nap: иначе система копит события мыши и полка опаздывает.
+    /// Без App Nap: иначе система копит события мыши и карман опаздывает.
     private var activity: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -19,16 +19,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         restore()
         collectGarbage()
 
-        detector.onShake = { [weak self] point, withFile in self?.summonShelf(at: point, ephemeral: withFile) }
+        detector.onShake = { [weak self] point, withFile in self?.summonPocket(at: point, ephemeral: withFile) }
         detector.start()
 
-        // ⌃⌥D — полка под курсором, ⌃⌥S — скриншот сразу на полку.
+        // ⌃⌥D — карман под курсором, ⌃⌥S — скриншот сразу в карман.
         hotKeys = [
             HotKey(keyCode: kVK_ANSI_D, modifiers: controlKey | optionKey) { [weak self] in
-                self?.summonShelf(at: NSEvent.mouseLocation)
+                self?.summonPocket(at: NSEvent.mouseLocation)
             },
             HotKey(keyCode: kVK_ANSI_S, modifiers: controlKey | optionKey) { [weak self] in
-                self?.screenshotToShelf()
+                self?.screenshotToPocket()
             },
         ]
     }
@@ -37,47 +37,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         save()
     }
 
-    // MARK: Полки
+    // MARK: Карманы
 
-    /// Встряхнули курсор: пустая полка переезжает к нему, иначе появляется новая.
-    /// С файлом в руке полка временная: отпустили мимо — она исчезает.
+    /// Встряхнули курсор: пустой карман переезжает к нему, иначе появляется новый.
+    /// С файлом в руке карман временный: отпустили мимо — он исчезает.
     @discardableResult
-    func summonShelf(at point: NSPoint, ephemeral: Bool = false) -> ShelfController? {
+    func summonPocket(at point: NSPoint, ephemeral: Bool = false) -> PocketController? {
         defer {
             if Settings.playSound { NSSound(named: "Pop")?.play() }
             if ephemeral { watchForRelease() }
         }
-        if let empty = controllers.first(where: { $0.shelf.items.isEmpty }) {
+        if let empty = controllers.first(where: { $0.pocket.items.isEmpty }) {
             empty.ephemeral = ephemeral
-            empty.shelf.received = false
+            empty.pocket.received = false
             empty.move(centeredAt: point)
             return empty
         } else {
-            if controllers.count >= maxShelves, let oldest = controllers.first(where: { !$0.panel.isKeyWindow }) {
+            if controllers.count >= maxPockets, let oldest = controllers.first(where: { !$0.panel.isKeyWindow }) {
                 oldest.close()
             }
-            let shelf = Shelf()
-            let origin = ShelfController.origin(centeredAt: point, size: ShelfController.compactSize)
-            let controller = open(shelf, at: origin, from: point)
+            let pocket = Pocket()
+            let origin = PocketController.origin(centeredAt: point, size: PocketController.compactSize)
+            let controller = open(pocket, at: origin, from: point)
             controller.ephemeral = ephemeral
             return controller
         }
     }
 
-    /// Ждёт, пока отпустят кнопку мыши, и убирает временные полки, на которые ничего не бросили.
-    /// Полки с файлами остаются на месте, чтобы ничего не мелькало и не терялось.
+    /// Ждёт, пока отпустят кнопку мыши, и убирает временные карманы, на которые ничего не бросили.
+    /// Карманы с файлами остаются на месте, чтобы ничего не мелькало и не терялось.
     private func watchForRelease() {
         guard releaseWatch == nil else { return }
         let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] timer in
             guard NSEvent.pressedMouseButtons & 1 == 0 else { return }
             timer.invalidate()
             self?.releaseWatch = nil
-            // Бросок на полку обрабатывается сразу после отпускания; даём ему время.
+            // Бросок в карман обрабатывается сразу после отпускания; даём ему время.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 guard let self else { return }
                 for c in self.controllers where c.ephemeral {
                     c.ephemeral = false
-                    if c.shelf.items.isEmpty && !c.shelf.received && !c.shelf.busy { c.close() }
+                    if c.pocket.items.isEmpty && !c.pocket.received && !c.pocket.busy { c.close() }
                 }
             }
         }
@@ -85,26 +85,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         releaseWatch = timer
     }
 
-    /// Снимает выделенную область и кладёт снимок на полку под курсором.
-    func screenshotToShelf() {
+    /// Снимает выделенную область и кладёт снимок в карман под курсором.
+    func screenshotToPocket() {
         Screenshots.capture { [weak self] url in
             guard let url, let self else { return }
-            self.summonShelf(at: NSEvent.mouseLocation)?.shelf.add([ShelfItem(kind: .file(url), owned: true)])
+            self.summonPocket(at: NSEvent.mouseLocation)?.pocket.add([PocketItem(kind: .file(url), owned: true)])
         }
     }
 
     @discardableResult
-    private func open(_ shelf: Shelf, at origin: NSPoint, from point: NSPoint? = nil) -> ShelfController {
-        let controller = ShelfController(shelf: shelf, origin: origin)
+    private func open(_ pocket: Pocket, at origin: NSPoint, from point: NSPoint? = nil) -> PocketController {
+        let controller = PocketController(pocket: pocket, origin: origin)
         controller.onClose = { [weak self] c in
             self?.controllers.removeAll { $0 === c }
             self?.save()
         }
         controller.onMoved = { [weak self] in self?.save() }
-        shelf.onChange = { [weak self] in self?.save() }
-        shelf.onEmptiedByDrag = { [weak controller] in
+        pocket.onChange = { [weak self] in self?.save() }
+        pocket.onEmptiedByDrag = { [weak controller] in
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                guard let controller, controller.shelf.items.isEmpty else { return }
+                guard let controller, controller.pocket.items.isEmpty else { return }
                 controller.close()
             }
         }
@@ -115,25 +115,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @discardableResult
-    @objc private func newShelfFromMenu() -> ShelfController? {
+    @objc private func newPocketFromMenu() -> PocketController? {
         let vf = NSScreen.main?.visibleFrame ?? .zero
-        return summonShelf(at: NSPoint(x: vf.maxX - 140, y: vf.maxY - 150))
+        return summonPocket(at: NSPoint(x: vf.maxX - 140, y: vf.maxY - 150))
     }
 
     // MARK: Сохранение между запусками
 
-    private struct SavedShelf: Codable {
+    private struct SavedPocket: Codable {
         var id: UUID
         var x: Double
         var y: Double
         var expanded: Bool
-        var items: [ShelfItem.Record]
+        var items: [PocketItem.Record]
     }
 
     private func save() {
-        let saved = controllers.filter { !$0.shelf.items.isEmpty }.map { c in
-            SavedShelf(id: c.shelf.id, x: c.shelfFrame.minX, y: c.shelfFrame.minY,
-                       expanded: c.shelf.expanded, items: c.shelf.items.map(\.record))
+        let saved = controllers.filter { !$0.pocket.items.isEmpty }.map { c in
+            SavedPocket(id: c.pocket.id, x: c.pocketFrame.minX, y: c.pocketFrame.minY,
+                        expanded: c.pocket.expanded, items: c.pocket.items.map(\.record))
         }
         if let data = try? JSONEncoder().encode(saved) {
             try? data.write(to: Storage.stateFile, options: .atomic)
@@ -142,19 +142,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func restore() {
         guard let data = try? Data(contentsOf: Storage.stateFile),
-              let saved = try? JSONDecoder().decode([SavedShelf].self, from: data) else { return }
+              let saved = try? JSONDecoder().decode([SavedPocket].self, from: data) else { return }
         for s in saved {
-            let shelf = Shelf(id: s.id, items: s.items.map(ShelfItem.init(record:)))
-            shelf.dropMissing()
-            guard !shelf.items.isEmpty else { continue }
-            shelf.expanded = s.expanded
-            open(shelf, at: NSPoint(x: s.x, y: s.y))
+            let pocket = Pocket(id: s.id, items: s.items.map(PocketItem.init(record:)))
+            pocket.dropMissing()
+            guard !pocket.items.isEmpty else { continue }
+            pocket.expanded = s.expanded
+            open(pocket, at: NSPoint(x: s.x, y: s.y))
         }
     }
 
-    /// Удаляет из папки приложения файлы, которых уже нет ни на одной полке.
+    /// Удаляет из папки приложения файлы, которых уже нет ни в одном кармане.
     private func collectGarbage() {
-        let alive = Set(controllers.flatMap { $0.shelf.fileURLs }
+        let alive = Set(controllers.flatMap { $0.pocket.fileURLs }
             .map { $0.deletingLastPathComponent().standardizedFileURL.path })
         let folders = (try? FileManager.default.contentsOfDirectory(at: Storage.items, includingPropertiesForKeys: nil)) ?? []
         for folder in folders where !alive.contains(folder.standardizedFileURL.path) {
@@ -178,25 +178,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
         menu.autoenablesItems = false
 
-        let new = ClosureMenuItem("Новая полка", symbol: "tray") { [weak self] in self?.newShelfFromMenu() }
+        let new = ClosureMenuItem("Новый карман", symbol: "tray") { [weak self] in self?.newPocketFromMenu() }
         new.keyEquivalent = "d"
         new.keyEquivalentModifierMask = [.control, .option]
         menu.addItem(new)
-        let shot = ClosureMenuItem("Скриншот на полку", symbol: "camera.viewfinder") { [weak self] in self?.screenshotToShelf() }
+        let shot = ClosureMenuItem("Скриншот в карман", symbol: "camera.viewfinder") { [weak self] in self?.screenshotToPocket() }
         shot.keyEquivalent = "s"
         shot.keyEquivalentModifierMask = [.control, .option]
         menu.addItem(shot)
-        menu.addItem(ClosureMenuItem("Последний скриншот на полку", symbol: "photo") { [weak self] in
+        menu.addItem(ClosureMenuItem("Последний скриншот в карман", symbol: "photo") { [weak self] in
             guard let self else { return }
             guard let url = Screenshots.latest() else { NSSound.beep(); return }
-            self.newShelfFromMenu()?.shelf.add([ShelfItem(kind: .file(url))])
+            self.newPocketFromMenu()?.pocket.add([PocketItem(kind: .file(url))])
         })
-        menu.addItem(ClosureMenuItem("Закрыть все полки", enabled: !controllers.isEmpty) { [weak self] in
+        menu.addItem(ClosureMenuItem("Закрыть все карманы", enabled: !controllers.isEmpty) { [weak self] in
             self?.controllers.forEach { $0.close() }
         })
 
         menu.addItem(.separator())
-        menu.addItem(sectionTitle("Полка по встряхиванию курсора"))
+        menu.addItem(sectionTitle("Карман по встряхиванию курсора"))
         for mode in Settings.ShakeMode.allCases {
             menu.addItem(ClosureMenuItem(mode.title, state: Settings.shakeMode == mode) {
                 Settings.shakeMode = mode
@@ -213,7 +213,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(sensitivity)
 
         menu.addItem(.separator())
-        menu.addItem(ClosureMenuItem("Убирать с полки после перетаскивания", state: Settings.removeAfterDrag) {
+        menu.addItem(ClosureMenuItem("Убирать из кармана после перетаскивания", state: Settings.removeAfterDrag) {
             Settings.removeAfterDrag.toggle()
         })
         menu.addItem(ClosureMenuItem("Звук при появлении", state: Settings.playSound) {

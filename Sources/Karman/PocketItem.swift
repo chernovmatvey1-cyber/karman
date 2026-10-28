@@ -2,10 +2,10 @@ import AppKit
 import QuickLookThumbnailing
 import UniformTypeIdentifiers
 
-/// Один объект на полке: файл, ссылка или кусок текста.
+/// Один объект в кармане: файл, ссылка или кусок текста.
 /// Картинки и текст без файла сохраняются в папку приложения, чтобы их
 /// можно было перетащить куда угодно как обычный файл.
-final class ShelfItem: Identifiable, ObservableObject {
+final class PocketItem: Identifiable, ObservableObject {
     enum Kind: Codable, Hashable {
         case file(URL)
         case link(URL)
@@ -23,7 +23,7 @@ final class ShelfItem: Identifiable, ObservableObject {
         self.owned = owned
         switch kind {
         case .file(let url): thumbnail = NSWorkspace.shared.icon(forFile: url.path)
-        case .link: thumbnail = ShelfItem.linkIcon
+        case .link: thumbnail = PocketItem.linkIcon
         }
         loadThumbnail()
     }
@@ -88,7 +88,7 @@ final class ShelfItem: Identifiable, ObservableObject {
 
 // MARK: Сохранение
 
-extension ShelfItem {
+extension PocketItem {
     struct Record: Codable {
         var id: UUID
         var kind: Kind
@@ -127,7 +127,7 @@ enum Storage {
     }
 
     /// Удаляет файл, созданный приложением, вместе с его папкой.
-    static func discard(_ item: ShelfItem) {
+    static func discard(_ item: PocketItem) {
         guard item.owned, let url = item.fileURL, isOwned(url) else { return }
         try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
     }

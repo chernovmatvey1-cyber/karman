@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Плавающая панель, которая не забирает фокус у текущего приложения
 /// и видна на всех рабочих столах, в том числе поверх полноэкранных окон.
-final class ShelfPanel: NSPanel {
+final class PocketPanel: NSPanel {
     init(frame: NSRect) {
         super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
                    backing: .buffered, defer: false)
@@ -22,30 +22,30 @@ final class ShelfPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// Одна полка на экране: окно, его содержимое и действия, которым нужно окно.
-final class ShelfController: NSObject {
-    static let compactSize = ShelfLayout.compact
-    static let expandedSize = ShelfLayout.expanded
+/// Один карман на экране: окно, его содержимое и действия, которым нужно окно.
+final class PocketController: NSObject {
+    static let compactSize = PocketLayout.compact
+    static let expandedSize = PocketLayout.expanded
 
-    let shelf: Shelf
-    let panel: ShelfPanel
-    /// Сама полка. Вокруг неё в окне прозрачный запас, чтобы пружинке
+    let pocket: Pocket
+    let panel: PocketPanel
+    /// Сам карман. Вокруг него в окне прозрачный запас, чтобы пружинке
     /// и размытию было куда выходить и углы не обрезались окном.
-    private let container: ShelfContainerView
+    private let container: PocketContainerView
     static let margin: CGFloat = 28
     private var closing = false
-    /// Полка вызвана встряхиванием с файлом: исчезнет, если файл бросили мимо.
+    /// Карман вызван встряхиванием с файлом: исчезнет, если файл бросили мимо.
     var ephemeral = false
-    var onClose: ((ShelfController) -> Void)?
+    var onClose: ((PocketController) -> Void)?
     var onMoved: (() -> Void)?
 
-    init(shelf: Shelf, origin: NSPoint) {
-        self.shelf = shelf
-        let size = shelf.expanded ? Self.expandedSize : Self.compactSize
+    init(pocket: Pocket, origin: NSPoint) {
+        self.pocket = pocket
+        let size = pocket.expanded ? Self.expandedSize : Self.compactSize
         let m = Self.margin
-        panel = ShelfPanel(frame: NSRect(origin: origin, size: size).insetBy(dx: -m, dy: -m))
+        panel = PocketPanel(frame: NSRect(origin: origin, size: size).insetBy(dx: -m, dy: -m))
         let root = NSView(frame: NSRect(origin: .zero, size: panel.frame.size))
-        container = ShelfContainerView(frame: root.bounds.insetBy(dx: m, dy: m))
+        container = PocketContainerView(frame: root.bounds.insetBy(dx: m, dy: m))
         super.init()
         container.controller = self
         container.wantsLayer = true
@@ -58,11 +58,11 @@ final class ShelfController: NSObject {
         glass.blendingMode = .behindWindow
         glass.state = .active
         glass.appearance = NSAppearance(named: .vibrantDark)
-        glass.maskImage = Self.roundedMask(radius: ShelfLayout.radius)
+        glass.maskImage = Self.roundedMask(radius: PocketLayout.radius)
         glass.autoresizingMask = [.width, .height]
         container.addSubview(glass)
 
-        let host = NSHostingView(rootView: ShelfView(shelf: shelf, actions: self))
+        let host = NSHostingView(rootView: PocketView(pocket: pocket, actions: self))
         host.frame = container.bounds
         host.autoresizingMask = [.width, .height]
         glass.addSubview(host)
@@ -87,7 +87,7 @@ final class ShelfController: NSObject {
         // Форма: из круглой капли в скруглённый квадрат.
         let mask = CAShapeLayer()
         mask.frame = b
-        mask.path = Self.roundedPath(b, radius: ShelfLayout.radius)
+        mask.path = Self.roundedPath(b, radius: PocketLayout.radius)
         layer.mask = mask
         let morph = CASpringAnimation(keyPath: "path")
         morph.fromValue = Self.droplet(center, diameter: 26)
@@ -133,11 +133,11 @@ final class ShelfController: NSObject {
         CATransaction.commit()
     }
 
-    /// Где на экране сама полка, без прозрачного запаса.
-    var shelfFrame: NSRect { panel.frame.insetBy(dx: Self.margin, dy: Self.margin) }
+    /// Где на экране сам карман, без прозрачного запаса.
+    var pocketFrame: NSRect { panel.frame.insetBy(dx: Self.margin, dy: Self.margin) }
 
     func move(centeredAt point: NSPoint) {
-        let o = Self.origin(centeredAt: point, size: shelfFrame.size)
+        let o = Self.origin(centeredAt: point, size: pocketFrame.size)
         panel.setFrameOrigin(NSPoint(x: o.x - Self.margin, y: o.y - Self.margin))
         show(from: point)
     }
@@ -167,7 +167,7 @@ final class ShelfController: NSObject {
         mask.path = Self.droplet(center, diameter: 18)
         layer.mask = mask
         let morph = CABasicAnimation(keyPath: "path")
-        morph.fromValue = Self.roundedPath(b, radius: ShelfLayout.radius)
+        morph.fromValue = Self.roundedPath(b, radius: PocketLayout.radius)
         morph.toValue = mask.path
         morph.duration = duration
         morph.timingFunction = sink
@@ -229,7 +229,7 @@ final class ShelfController: NSObject {
 
     @objc private func windowMoved() { onMoved?() }
 
-    /// Позиция окна так, чтобы курсор оказался внутри полки, но не за краем экрана.
+    /// Позиция окна так, чтобы курсор оказался внутри кармана, но не за краем экрана.
     static func origin(centeredAt p: NSPoint, size: NSSize) -> NSPoint {
         var origin = NSPoint(x: p.x - size.width / 2, y: p.y - size.height / 2 - 20)
         let screen = NSScreen.screens.first { NSMouseInRect(p, $0.frame, false) } ?? NSScreen.main
@@ -255,53 +255,53 @@ final class ShelfController: NSObject {
 
 // MARK: Действия, вызываемые из интерфейса
 
-extension ShelfController: ShelfActions {
-    func closeShelf() { close() }
+extension PocketController: PocketActions {
+    func closePocket() { close() }
 
-    func run(_ action: ShelfAction) {
-        shelf.perform(action, on: shelf.targets)
+    func run(_ action: PocketAction) {
+        pocket.perform(action, on: pocket.targets)
     }
 
     func toggleExpanded() {
-        let expanded = !shelf.expanded
+        let expanded = !pocket.expanded
         let size = expanded ? Self.expandedSize : Self.compactSize
-        let old = shelfFrame
+        let old = pocketFrame
         var frame = NSRect(x: old.midX - size.width / 2, y: old.maxY - size.height, width: size.width, height: size.height)
         if let vf = panel.screen?.visibleFrame {
             frame.origin.x = min(max(frame.minX, vf.minX + 8), vf.maxX - size.width - 8)
             frame.origin.y = max(frame.minY, vf.minY + 8)
         }
-        shelf.selection.removeAll()
-        withAnimation(.easeInOut(duration: 0.2)) { shelf.expanded = expanded }
+        pocket.selection.removeAll()
+        withAnimation(.easeInOut(duration: 0.2)) { pocket.expanded = expanded }
         panel.setFrame(frame.insetBy(dx: -Self.margin, dy: -Self.margin), display: true, animate: true)
-        shelf.onChange?()
+        pocket.onChange?()
     }
 
     func showMenu() {
         let menu = NSMenu()
         menu.autoenablesItems = false
-        let has = !shelf.items.isEmpty
-        let hasFiles = !shelf.fileURLs.isEmpty
-        let hasImages = shelf.fileURLs.contains(where: Processing.isImage)
+        let has = !pocket.items.isEmpty
+        let hasFiles = !pocket.fileURLs.isEmpty
+        let hasImages = pocket.fileURLs.contains(where: Processing.isImage)
 
         menu.addItem(ClosureMenuItem("Быстрый просмотр", key: " ", symbol: "eye", enabled: hasFiles) { [weak self] in self?.quickLook() })
-        menu.addItem(ClosureMenuItem("Открыть", symbol: "arrow.up.forward.app", enabled: has) { [weak self] in self?.shelf.open() })
-        menu.addItem(ClosureMenuItem("Показать в Finder", symbol: "folder", enabled: hasFiles) { [weak self] in self?.shelf.revealInFinder() })
+        menu.addItem(ClosureMenuItem("Открыть", symbol: "arrow.up.forward.app", enabled: has) { [weak self] in self?.pocket.open() })
+        menu.addItem(ClosureMenuItem("Показать в Finder", symbol: "folder", enabled: hasFiles) { [weak self] in self?.pocket.revealInFinder() })
 
         menu.addItem(.separator())
-        for action in ShelfAction.allCases {
+        for action in PocketAction.allCases {
             let enabled = action.needsImages ? hasImages : hasFiles
             menu.addItem(ClosureMenuItem(action.menuTitle, symbol: action.symbol, enabled: enabled) { [weak self] in
                 guard let self else { return }
-                self.shelf.perform(action, on: self.shelf.targets)
+                self.pocket.perform(action, on: self.pocket.targets)
             })
         }
 
         menu.addItem(.separator())
-        menu.addItem(ClosureMenuItem("AirDrop", symbol: "airplayaudio", enabled: hasFiles) { [weak self] in self?.shelf.airDrop() })
+        menu.addItem(ClosureMenuItem("AirDrop", symbol: "airplayaudio", enabled: hasFiles) { [weak self] in self?.pocket.airDrop() })
         menu.addItem(ClosureMenuItem("Поделиться…", symbol: "square.and.arrow.up", enabled: has) { [weak self] in self?.share() })
-        menu.addItem(ClosureMenuItem("Скопировать", key: "c", symbol: "doc.on.doc", enabled: has) { [weak self] in self?.shelf.copyToPasteboard() })
-        menu.addItem(ClosureMenuItem("Скопировать путь", symbol: "link", enabled: hasFiles) { [weak self] in self?.shelf.copyPaths() })
+        menu.addItem(ClosureMenuItem("Скопировать", key: "c", symbol: "doc.on.doc", enabled: has) { [weak self] in self?.pocket.copyToPasteboard() })
+        menu.addItem(ClosureMenuItem("Скопировать путь", symbol: "link", enabled: hasFiles) { [weak self] in self?.pocket.copyPaths() })
         menu.addItem(ClosureMenuItem("Сохранить в папку…", symbol: "square.and.arrow.down", enabled: has) { [weak self] in self?.saveToFolder() })
 
         menu.addItem(.separator())
@@ -310,12 +310,12 @@ extension ShelfController: ShelfActions {
         menu.addItem(ClosureMenuItem("Добавить последний скриншот", symbol: "photo") { [weak self] in self?.addLatestScreenshot() })
 
         menu.addItem(.separator())
-        menu.addItem(ClosureMenuItem(shelf.expanded ? "Свернуть в стопку" : "Показать все",
-                                     symbol: shelf.expanded ? "square.stack" : "list.bullet", enabled: has) { [weak self] in
+        menu.addItem(ClosureMenuItem(pocket.expanded ? "Свернуть в стопку" : "Показать все",
+                                     symbol: pocket.expanded ? "square.stack" : "list.bullet", enabled: has) { [weak self] in
             self?.toggleExpanded()
         })
-        menu.addItem(ClosureMenuItem("Очистить полку", symbol: "trash", enabled: has) { [weak self] in self?.shelf.clear() })
-        menu.addItem(ClosureMenuItem("Закрыть полку", key: "w", symbol: "xmark") { [weak self] in self?.close() })
+        menu.addItem(ClosureMenuItem("Очистить карман", symbol: "trash", enabled: has) { [weak self] in self?.pocket.clear() })
+        menu.addItem(ClosureMenuItem("Закрыть карман", key: "w", symbol: "xmark") { [weak self] in self?.close() })
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
@@ -324,28 +324,28 @@ extension ShelfController: ShelfActions {
         Screenshots.capture { [weak self] url in
             guard let self else { return }
             self.panel.orderFrontRegardless()
-            if let url { self.shelf.add([ShelfItem(kind: .file(url), owned: true)]) }
+            if let url { self.pocket.add([PocketItem(kind: .file(url), owned: true)]) }
         }
     }
 
-    func remove(_ item: ShelfItem) {
-        shelf.remove([item.id])
+    func remove(_ item: PocketItem) {
+        pocket.remove([item.id])
     }
 
     func paste() {
-        if shelf.ingest(from: .general) { shelf.received = true } else { NSSound.beep() }
+        if pocket.ingest(from: .general) { pocket.received = true } else { NSSound.beep() }
     }
 
     func addLatestScreenshot() {
         if let url = Screenshots.latest() {
-            shelf.add([ShelfItem(kind: .file(url))])
+            pocket.add([PocketItem(kind: .file(url))])
         } else {
             NSSound.beep()
         }
     }
 
     func quickLook() {
-        guard !shelf.fileURLs.isEmpty else { return }
+        guard !pocket.fileURLs.isEmpty else { return }
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKey()
         panel.makeFirstResponder(container)
@@ -354,7 +354,7 @@ extension ShelfController: ShelfActions {
     }
 
     func share() {
-        let objects: [Any] = shelf.targets.map { item -> Any in
+        let objects: [Any] = pocket.targets.map { item -> Any in
             switch item.kind { case .file(let u), .link(let u): return u }
         }
         NSApp.activate(ignoringOtherApps: true)
@@ -370,22 +370,22 @@ extension ShelfController: ShelfActions {
         open.canChooseFiles = false
         open.canCreateDirectories = true
         open.prompt = "Сохранить сюда"
-        open.message = "Куда скопировать \(pluralRu(shelf.items.count, "объект", "объекта", "объектов"))?"
+        open.message = "Куда скопировать \(pluralRu(pocket.items.count, "объект", "объекта", "объектов"))?"
         if open.runModal() == .OK, let folder = open.url {
-            shelf.copy(to: folder)
+            pocket.copy(to: folder)
         }
     }
 }
 
 // MARK: Корневой вид окна: принимает перетаскивание и клавиши
 
-final class ShelfContainerView: NSView {
-    weak var controller: ShelfController?
-    private var shelf: Shelf? { controller?.shelf }
+final class PocketContainerView: NSView {
+    weak var controller: PocketController?
+    private var pocket: Pocket? { controller?.pocket }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        registerForDraggedTypes(Shelf.acceptedTypes)
+        registerForDraggedTypes(Pocket.acceptedTypes)
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -401,51 +401,51 @@ final class ShelfContainerView: NSView {
                                        owner: self))
     }
 
-    override func mouseEntered(with event: NSEvent) { shelf?.hovering = true }
-    override func mouseExited(with event: NSEvent) { shelf?.hovering = false }
+    override func mouseEntered(with event: NSEvent) { pocket?.hovering = true }
+    override func mouseExited(with event: NSEvent) { pocket?.hovering = false }
 
     // Перетаскивание внутрь.
 
-    private func action(at sender: NSDraggingInfo) -> ShelfAction? {
+    private func action(at sender: NSDraggingInfo) -> PocketAction? {
         let p = convert(sender.draggingLocation, from: nil)
-        return ShelfLayout.tile(at: p, width: bounds.width).map { ShelfAction.instant[$0] }
+        return PocketLayout.tile(at: p, width: bounds.width).map { PocketAction.instant[$0] }
     }
 
-    /// Объекты с этой же полки: их можно бросить только на плитку действия.
+    /// Объекты из этого же кармана: их можно бросить только на плитку действия.
     private func isOwn(_ sender: NSDraggingInfo) -> Bool {
-        (sender.draggingSource as? ItemDragView)?.shelf === shelf
+        (sender.draggingSource as? ItemDragView)?.pocket === pocket
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        shelf?.isTargeted = true
+        pocket?.isTargeted = true
         return draggingUpdated(sender)
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard let shelf else { return [] }
+        guard let pocket else { return [] }
         let action = action(at: sender)
-        if shelf.dropAction != action { shelf.dropAction = action }
+        if pocket.dropAction != action { pocket.dropAction = action }
         return isOwn(sender) && action == nil ? [] : .copy
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
-        shelf?.isTargeted = false
-        shelf?.dropAction = nil
+        pocket?.isTargeted = false
+        pocket?.dropAction = nil
     }
 
     override func draggingEnded(_ sender: NSDraggingInfo) {
-        shelf?.isTargeted = false
-        shelf?.dropAction = nil
+        pocket?.isTargeted = false
+        pocket?.dropAction = nil
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        guard let shelf else { return false }
+        guard let pocket else { return false }
         let action = action(at: sender)
-        shelf.isTargeted = false
-        shelf.dropAction = nil
+        pocket.isTargeted = false
+        pocket.dropAction = nil
         if isOwn(sender) && action == nil { return false }
-        let ok = shelf.ingest(from: sender.draggingPasteboard, then: action)
-        if ok { shelf.received = true }
+        let ok = pocket.ingest(from: sender.draggingPasteboard, then: action)
+        if ok { pocket.received = true }
         return ok
     }
 
@@ -455,7 +455,7 @@ final class ShelfContainerView: NSView {
         switch event.keyCode {
         case 49: controller?.quickLook()                 // пробел
         case 53: controller?.close()                     // Esc
-        case 51, 117: shelf?.clear()                     // Delete
+        case 51, 117: pocket?.clear()                     // Delete
         default: super.keyDown(with: event)
         }
     }
@@ -465,7 +465,7 @@ final class ShelfContainerView: NSView {
               window?.isKeyWindow == true else { return super.performKeyEquivalent(with: event) }
         switch event.charactersIgnoringModifiers {
         case "v": controller?.paste(); return true
-        case "c": shelf?.copyToPasteboard(); return true
+        case "c": pocket?.copyToPasteboard(); return true
         case "w": controller?.close(); return true
         case "a": return true
         default: return super.performKeyEquivalent(with: event)
@@ -486,13 +486,13 @@ final class ShelfContainerView: NSView {
     }
 }
 
-extension ShelfContainerView: QLPreviewPanelDataSource {
+extension PocketContainerView: QLPreviewPanelDataSource {
     func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
-        shelf?.fileURLs.count ?? 0
+        pocket?.fileURLs.count ?? 0
     }
 
     func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> QLPreviewItem! {
-        shelf?.fileURLs[index] as NSURL?
+        pocket?.fileURLs[index] as NSURL?
     }
 }
 
@@ -501,13 +501,13 @@ extension ShelfContainerView: QLPreviewPanelDataSource {
 /// Прозрачный слой над стопкой или строкой списка, из которого объекты
 /// вытаскиваются в Finder, мессенджер, почту и так далее.
 final class ItemDragView: NSView, NSDraggingSource {
-    weak var shelf: Shelf?
-    var items: () -> [ShelfItem] = { [] }
+    weak var pocket: Pocket?
+    var items: () -> [PocketItem] = { [] }
     var onDoubleClick: (() -> Void)?
     /// Обычный клик без перетаскивания; аргумент — зажат ли ⌘ или ⇧.
     var onClick: ((Bool) -> Void)?
     private var downEvent: NSEvent?
-    private var dragging: [ShelfItem] = []
+    private var dragging: [PocketItem] = []
 
     override var mouseDownCanMoveWindow: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -553,11 +553,11 @@ final class ItemDragView: NSView, NSDraggingSource {
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
         defer { dragging = [] }
-        guard !operation.isEmpty, Settings.removeAfterDrag, let shelf else { return }
-        // Объект сам по себе возвращённый на ту же полку не убираем.
+        guard !operation.isEmpty, Settings.removeAfterDrag, let pocket else { return }
+        // Объект сам по себе возвращённый в тот же карман не убираем.
         if let window, NSMouseInRect(screenPoint, window.frame, false) { return }
         withAnimation(.easeOut(duration: 0.2)) {
-            shelf.remove(Set(dragging.map(\.id)), byDrag: true)
+            pocket.remove(Set(dragging.map(\.id)), byDrag: true)
         }
     }
 }

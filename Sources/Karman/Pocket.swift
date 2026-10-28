@@ -1,30 +1,30 @@
 import AppKit
 import UniformTypeIdentifiers
 
-/// Содержимое одной полки.
-final class Shelf: ObservableObject, Identifiable {
+/// Содержимое одного кармана.
+final class Pocket: ObservableObject, Identifiable {
     let id: UUID
-    @Published private(set) var items: [ShelfItem] = []
+    @Published private(set) var items: [PocketItem] = []
     @Published var expanded = false
     @Published var isTargeted = false
-    /// На полку что-то бросили или вставили: случайной её больше не считаем.
+    /// В карман что-то бросили или вставили: случайным его больше не считаем.
     var received = false
-    /// Курсор над полкой: тогда видны кнопки.
+    /// Курсор над карманом: тогда видны кнопки.
     @Published var hovering = false
-    /// Над какой плиткой действия сейчас несут объекты; nil — просто на полку.
-    @Published var dropAction: ShelfAction?
+    /// Над какой плиткой действия сейчас несут объекты; nil — просто в карман.
+    @Published var dropAction: PocketAction?
     @Published var busy = false
-    /// Выделенные в раскрытой полке объекты.
+    /// Выделенные в раскрытом кармане объекты.
     @Published var selection: Set<UUID> = []
     @Published var toast: (text: String, symbol: String)?
     private var toastWork: DispatchWorkItem?
 
     /// Вызывается при любом изменении, чтобы сохранить состояние.
     var onChange: (() -> Void)?
-    /// Полка опустела после того, как всё перетащили наружу.
+    /// Карман опустел после того, как всё перетащили наружу.
     var onEmptiedByDrag: (() -> Void)?
 
-    init(id: UUID = UUID(), items: [ShelfItem] = []) {
+    init(id: UUID = UUID(), items: [PocketItem] = []) {
         self.id = id
         self.items = items
     }
@@ -37,13 +37,13 @@ final class Shelf: ObservableObject, Identifiable {
     var fileURLs: [URL] { items.compactMap(\.fileURL) }
 
     /// С чем работают действия: выделенное, а если ничего не выделено — всё.
-    var targets: [ShelfItem] {
+    var targets: [PocketItem] {
         let picked = items.filter { selection.contains($0.id) }
         return picked.isEmpty ? items : picked
     }
 
     /// Клик выделяет один объект, с ⌘ или ⇧ — добавляет к выделению.
-    func click(_ item: ShelfItem, extend: Bool) {
+    func click(_ item: PocketItem, extend: Bool) {
         if extend {
             if selection.contains(item.id) { selection.remove(item.id) } else { selection.insert(item.id) }
         } else {
@@ -53,7 +53,7 @@ final class Shelf: ObservableObject, Identifiable {
 
     // MARK: Изменение
 
-    func add(_ new: [ShelfItem]) {
+    func add(_ new: [PocketItem]) {
         let known = Set(items.map(\.kind))
         let fresh = new.filter { !known.contains($0.kind) }
         guard !fresh.isEmpty else { return }
@@ -108,16 +108,16 @@ final class Shelf: ObservableObject, Identifiable {
 
     /// Забирает всё полезное из буфера. Возвращает false, если брать нечего.
     @discardableResult
-    func ingest(from pb: NSPasteboard, then action: ShelfAction? = nil) -> Bool {
-        // С действием объекты не ложатся на полку, а сразу обрабатываются.
-        let deliver: ([ShelfItem]) -> Void = { [weak self] items in
+    func ingest(from pb: NSPasteboard, then action: PocketAction? = nil) -> Bool {
+        // С действием объекты не ложатся в карман, а сразу обрабатываются.
+        let deliver: ([PocketItem]) -> Void = { [weak self] items in
             guard let self else { return }
             if let action { self.perform(action, on: items) } else { self.add(items) }
         }
         // 1. Обычные файлы и папки.
         if let urls = pb.readObjects(forClasses: [NSURL.self],
                                      options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
-            deliver(urls.map { ShelfItem(kind: .file($0), owned: Storage.isOwned($0)) })
+            deliver(urls.map { PocketItem(kind: .file($0), owned: Storage.isOwned($0)) })
             return true
         }
 
@@ -128,7 +128,7 @@ final class Shelf: ObservableObject, Identifiable {
                 receiver.receivePromisedFiles(atDestination: Storage.newItemFolder(), options: [:],
                                               operationQueue: Self.promiseQueue) { url, error in
                     guard error == nil else { return }
-                    DispatchQueue.main.async { deliver([ShelfItem(kind: .file(url), owned: true)]) }
+                    DispatchQueue.main.async { deliver([PocketItem(kind: .file(url), owned: true)]) }
                 }
             }
             return true
@@ -139,7 +139,7 @@ final class Shelf: ObservableObject, Identifiable {
         for (type, ext) in Self.rawImageTypes {
             if let data = pb.data(forType: NSPasteboard.PasteboardType(type)),
                let url = Storage.save(data: data, name: "\(Storage.imageName()).\(ext)") {
-                deliver([ShelfItem(kind: .file(url), owned: true)])
+                deliver([PocketItem(kind: .file(url), owned: true)])
                 return true
             }
         }
@@ -156,7 +156,7 @@ final class Shelf: ObservableObject, Identifiable {
         // 5. Любая другая картинка, например скопированная из Превью.
         if pb.canReadItem(withDataConformingToTypes: NSImage.imageTypes),
            let image = NSImage(pasteboard: pb), let url = Storage.save(image: image) {
-            deliver([ShelfItem(kind: .file(url), owned: true)])
+            deliver([PocketItem(kind: .file(url), owned: true)])
             return true
         }
 
@@ -164,7 +164,7 @@ final class Shelf: ObservableObject, Identifiable {
         if let urls = pb.readObjects(forClasses: [NSURL.self]) as? [URL] {
             let links = urls.filter { $0.scheme != nil && !$0.isFileURL }
             if !links.isEmpty {
-                deliver(links.map { ShelfItem(kind: .link($0)) })
+                deliver(links.map { PocketItem(kind: .link($0)) })
                 return true
             }
         }
@@ -173,9 +173,9 @@ final class Shelf: ObservableObject, Identifiable {
         if let text = pb.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
             if !text.contains(where: \.isWhitespace), let url = URL(string: text),
                let scheme = url.scheme, ["http", "https"].contains(scheme) {
-                deliver([ShelfItem(kind: .link(url))])
+                deliver([PocketItem(kind: .link(url))])
             } else if let url = Storage.save(text: text) {
-                deliver([ShelfItem(kind: .file(url), owned: true)])
+                deliver([PocketItem(kind: .file(url), owned: true)])
             }
             return true
         }
@@ -190,19 +190,19 @@ final class Shelf: ObservableObject, Identifiable {
     private static let imageExtensions: Set<String> = ["gif", "png", "jpg", "jpeg", "webp", "heic"]
 
     /// Скачивает картинку по ссылке в папку приложения.
-    private static func download(_ url: URL, completion: @escaping (ShelfItem) -> Void) {
+    private static func download(_ url: URL, completion: @escaping (PocketItem) -> Void) {
         URLSession.shared.downloadTask(with: url) { temp, response, _ in
             guard let temp, (response as? HTTPURLResponse)?.statusCode ?? 200 < 400 else { return }
             let name = url.lastPathComponent.removingPercentEncoding ?? url.lastPathComponent
             let target = Storage.newItemFolder().appendingPathComponent(name)
             guard (try? FileManager.default.moveItem(at: temp, to: target)) != nil else { return }
-            DispatchQueue.main.async { completion(ShelfItem(kind: .file(target), owned: true)) }
+            DispatchQueue.main.async { completion(PocketItem(kind: .file(target), owned: true)) }
         }.resume()
     }
 
     // MARK: Действия
 
-    func copyToPasteboard(_ subset: [ShelfItem]? = nil) {
+    func copyToPasteboard(_ subset: [PocketItem]? = nil) {
         let list = subset ?? targets
         guard !list.isEmpty else { return }
         let pb = NSPasteboard.general
@@ -210,7 +210,7 @@ final class Shelf: ObservableObject, Identifiable {
         pb.writeObjects(list.map(\.pasteboardWriter))
     }
 
-    func open(_ subset: [ShelfItem]? = nil) {
+    func open(_ subset: [PocketItem]? = nil) {
         for item in subset ?? items {
             switch item.kind {
             case .file(let url), .link(let url): NSWorkspace.shared.open(url)

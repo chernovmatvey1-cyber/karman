@@ -49,13 +49,13 @@ enum Settings {
         set { d.set(newValue.rawValue, forKey: "sensitivity") }
     }
 
-    /// Убирать объекты с полки, когда их перетащили наружу.
+    /// Убирать объекты из кармана, когда их перетащили наружу.
     static var removeAfterDrag: Bool {
         get { d.object(forKey: "removeAfterDrag") as? Bool ?? true }
         set { d.set(newValue, forKey: "removeAfterDrag") }
     }
 
-    /// Звук при появлении полки.
+    /// Звук при появлении кармана.
     static var playSound: Bool {
         get { d.object(forKey: "playSound") as? Bool ?? false }
         set { d.set(newValue, forKey: "playSound") }

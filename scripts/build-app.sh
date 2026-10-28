@@ -38,7 +38,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSAppSleepDisabled</key><true/>
-  <key>NSDesktopFolderUsageDescription</key><string>Чтобы класть на полку последний скриншот с Рабочего стола.</string>
+  <key>NSDesktopFolderUsageDescription</key><string>Чтобы класть в карман последний скриншот с Рабочего стола.</string>
 </dict>
 </plist>
 PLIST

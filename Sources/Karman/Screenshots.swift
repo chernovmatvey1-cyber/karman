@@ -36,7 +36,7 @@ enum Screenshots {
 }
 
 extension Screenshots {
-    /// Системный выбор области (пробел — окно, Esc — отмена) прямо в папку полки.
+    /// Системный выбор области (пробел — окно, Esc — отмена) прямо в папку кармана.
     static func capture(completion: @escaping (URL?) -> Void) {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd 'в' HH.mm.ss"

@@ -5,14 +5,14 @@ import PDFKit
 import UniformTypeIdentifiers
 import Vision
 
-/// Что полка умеет делать с объектами. Всё считается на самом Mac, без сети.
-enum ShelfAction: CaseIterable {
+/// Что карман умеет делать с объектами. Всё считается на самом Mac, без сети.
+enum PocketAction: CaseIterable {
     case text, cutout, wide, crop, compress, pdf, zip
 
-    /// Плитки, которые появляются, пока над полкой что-то несут.
-    static let instant: [ShelfAction] = [.text, .cutout, .wide, .compress]
-    /// Кнопки внизу раскрытой полки. PDF, ZIP и AirDrop живут в меню ⌄.
-    static let bar: [ShelfAction] = [.text, .cutout, .wide, .crop, .compress]
+    /// Плитки, которые появляются, пока над карманом что-то несут.
+    static let instant: [PocketAction] = [.text, .cutout, .wide, .compress]
+    /// Кнопки внизу раскрытого кармана. PDF, ZIP и AirDrop живут в меню ⌄.
+    static let bar: [PocketAction] = [.text, .cutout, .wide, .crop, .compress]
 
     var title: String {
         switch self {
@@ -53,9 +53,9 @@ enum ShelfAction: CaseIterable {
     var needsImages: Bool { self != .zip }
 }
 
-extension Shelf {
-    /// Выполняет действие и кладёт результат на полку.
-    func perform(_ action: ShelfAction, on items: [ShelfItem]) {
+extension Pocket {
+    /// Выполняет действие и кладёт результат в карман.
+    func perform(_ action: PocketAction, on items: [PocketItem]) {
         let urls = items.compactMap(\.fileURL)
         var input = action.needsImages ? urls.filter(Processing.isImage) : urls
         // GIF при сжатии потерял бы анимацию.
@@ -69,9 +69,9 @@ extension Shelf {
             return
         }
         if action == .crop {
-            // Обрезка вручную открывает редактор, результат возвращается на полку.
+            // Обрезка вручную открывает редактор, результат возвращается в карман.
             CropEditor.open(input) { [weak self] urls in
-                self?.add(urls.map { ShelfItem(kind: .file($0), owned: true) })
+                self?.add(urls.map { PocketItem(kind: .file($0), owned: true) })
             }
             return
         }
@@ -118,7 +118,7 @@ extension Shelf {
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.busy = false
-                self.add(results.map { ShelfItem(kind: .file($0), owned: true) })
+                self.add(results.map { PocketItem(kind: .file($0), owned: true) })
                 if let toast { self.showToast(toast.0, symbol: toast.1) }
             }
         }
