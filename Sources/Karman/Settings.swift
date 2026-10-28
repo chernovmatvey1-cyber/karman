@@ -55,6 +55,12 @@ enum Settings {
         set { d.set(newValue, forKey: "removeAfterDrag") }
     }
 
+    /// Запоминать последние копирования (⌘C).
+    static var clipboardHistory: Bool {
+        get { d.object(forKey: "clipboardHistory") as? Bool ?? true }
+        set { d.set(newValue, forKey: "clipboardHistory") }
+    }
+
     /// Звук при появлении кармана.
     static var playSound: Bool {
         get { d.object(forKey: "playSound") as? Bool ?? false }

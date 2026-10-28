@@ -5,6 +5,7 @@ import ServiceManagement
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let detector = ShakeDetector()
+    private let clipboard = ClipboardHistory()
     private var hotKeys: [HotKey] = []
     private var controllers: [PocketController] = []
     private let maxPockets = 8
@@ -21,14 +22,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         detector.onShake = { [weak self] point, withFile in self?.summonPocket(at: point, ephemeral: withFile) }
         detector.start()
+        clipboard.start()
 
-        // ⌃⌥D — карман под курсором, ⌃⌥S — скриншот сразу в карман.
+        // ⌃⌥D — карман под курсором, ⌃⌥S — скриншот сразу в карман, ⌃⌥V — последние копирования.
         hotKeys = [
             HotKey(keyCode: kVK_ANSI_D, modifiers: controlKey | optionKey) { [weak self] in
                 self?.summonPocket(at: NSEvent.mouseLocation)
             },
             HotKey(keyCode: kVK_ANSI_S, modifiers: controlKey | optionKey) { [weak self] in
                 self?.screenshotToPocket()
+            },
+            HotKey(keyCode: kVK_ANSI_V, modifiers: controlKey | optionKey) { [weak self] in
+                self?.showClipboardMenu()
             },
         ]
     }
@@ -120,6 +125,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return summonPocket(at: NSPoint(x: vf.maxX - 140, y: vf.maxY - 150))
     }
 
+    // MARK: Последние копирования
+
+    /// Список копирований у курсора: выбрали — оно снова в буфере, осталось нажать ⌘V.
+    private func showClipboardMenu() {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        addClipboardItems(to: menu)
+        // Меню слушает клавиши, только пока приложение активно; потом возвращаем
+        // фокус туда, где пользователь был, чтобы ⌘V вставил куда нужно.
+        let front = NSWorkspace.shared.frontmostApplication
+        NSApp.activate()
+        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        front?.activate()
+    }
+
+    /// Записи истории; с ⌥ вместо «скопировать» — «в карман».
+    private func addClipboardItems(to menu: NSMenu) {
+        guard Settings.clipboardHistory else {
+            menu.addItem(sectionTitle("История копирований выключена"))
+            return
+        }
+        guard !clipboard.entries.isEmpty else {
+            menu.addItem(sectionTitle("Скопируйте что-нибудь — появится здесь"))
+            return
+        }
+        for (i, entry) in clipboard.entries.enumerated() {
+            let key = i < 9 ? "\(i + 1)" : ""
+            let copy = ClosureMenuItem(entry.title, key: key, symbol: entry.symbol) { [weak self] in
+                self?.clipboard.restore(entry)
+            }
+            copy.keyEquivalentModifierMask = []
+            copy.toolTip = "Скопировать снова. С ⌥ — положить в карман"
+            menu.addItem(copy)
+            let toPocket = ClosureMenuItem("В карман: \(entry.title)", key: key, symbol: "tray.and.arrow.down") { [weak self] in
+                guard let self else { return }
+                let pb = self.clipboard.pasteboard(for: entry)
+                self.summonPocket(at: NSEvent.mouseLocation)?.pocket.ingest(from: pb)
+            }
+            toPocket.keyEquivalentModifierMask = [.option]
+            toPocket.isAlternate = true
+            menu.addItem(toPocket)
+        }
+        menu.addItem(ClosureMenuItem("Очистить историю", symbol: "trash") { [weak self] in self?.clipboard.clear() })
+    }
+
     // MARK: Сохранение между запусками
 
     private struct SavedPocket: Codable {
@@ -196,6 +246,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         })
 
         menu.addItem(.separator())
+        let history = NSMenuItem(title: "Последние копирования", action: nil, keyEquivalent: "v")
+        history.keyEquivalentModifierMask = [.control, .option]
+        history.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: nil)
+        let historyMenu = NSMenu()
+        historyMenu.autoenablesItems = false
+        addClipboardItems(to: historyMenu)
+        history.submenu = historyMenu
+        menu.addItem(history)
+
+        menu.addItem(.separator())
         menu.addItem(sectionTitle("Карман по встряхиванию курсора"))
         for mode in Settings.ShakeMode.allCases {
             menu.addItem(ClosureMenuItem(mode.title, state: Settings.shakeMode == mode) {
@@ -215,6 +275,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(ClosureMenuItem("Убирать из кармана после перетаскивания", state: Settings.removeAfterDrag) {
             Settings.removeAfterDrag.toggle()
+        })
+        menu.addItem(ClosureMenuItem("Запоминать копирования", state: Settings.clipboardHistory) { [weak self] in
+            Settings.clipboardHistory.toggle()
+            if !Settings.clipboardHistory { self?.clipboard.clear() }
         })
         menu.addItem(ClosureMenuItem("Звук при появлении", state: Settings.playSound) {
             Settings.playSound.toggle()
