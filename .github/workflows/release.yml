@@ -1,0 +1,21 @@
+# Новая версия: git tag v1.1 && git push origin v1.1 — GitHub соберёт архив и выложит релиз.
+name: Релиз
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Сборка
+        run: scripts/build-app.sh --zip
+      - name: Релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" build/Karman.zip --title "Карман $GITHUB_REF_NAME" --notes-file .github/release-notes.md

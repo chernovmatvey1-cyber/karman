@@ -5,6 +5,12 @@
 
 Без сети, без аккаунтов, все обрабатывается на самом Mac.
 
+## Скачать
+
+[**Karman.zip**](https://github.com/chernovmatvey1-cyber/karman/releases/latest/download/Karman.zip) — macOS 14+, Apple Silicon и Intel.
+Распакуйте, перенесите «Карман» в «Программы». При первом запуске macOS не узнает разработчика:
+Системные настройки → Конфиденциальность и безопасность → «Всё равно открыть».
+
 ## Возможности
 
 - **Встряхивание.** Карман появляется, когда трясёте курсор с файлом (можно включить всегда).
@@ -44,7 +50,10 @@
 ```sh
 scripts/build-app.sh            # build/Карман.app
 scripts/build-app.sh --install  # и поставить в /Applications
+scripts/build-app.sh --zip      # архив build/Karman.zip
 ```
+
+Новая версия: `git tag v1.1 && git push origin v1.1` — GitHub сам соберёт архив и выложит релиз.
 
 ## Устройство
 
