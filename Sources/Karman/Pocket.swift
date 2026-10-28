@@ -7,6 +7,8 @@ final class Pocket: ObservableObject, Identifiable {
     @Published private(set) var items: [PocketItem] = []
     @Published var expanded = false
     @Published var isTargeted = false
+    /// Вместо содержимого показан список последних копирований.
+    @Published var showsClipboard = false
     /// В карман что-то бросили или вставили: случайным его больше не считаем.
     var received = false
     /// Курсор над карманом: тогда видны кнопки.

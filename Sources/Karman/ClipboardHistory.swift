@@ -3,7 +3,9 @@ import AppKit
 /// Последние копирования (⌘C). Буфер обмена не присылает уведомлений,
 /// поэтому раз в полсекунды сверяем его счётчик изменений.
 /// Хранится только в памяти: после выхода из приложения история пропадает.
-final class ClipboardHistory {
+final class ClipboardHistory: ObservableObject {
+    static let shared = ClipboardHistory()
+
     struct Entry {
         let id = UUID()
         /// Все типы каждого объекта буфера, чтобы вернуть копию в точности.
@@ -11,13 +13,33 @@ final class ClipboardHistory {
         let title: String
         let symbol: String
         let date = Date()
+
+        /// Для перетаскивания записи из кармана: файл, текст или картинка.
+        func itemProvider() -> NSItemProvider {
+            guard let first = items.first else { return NSItemProvider() }
+            if let data = first[.fileURL], let url = URL(dataRepresentation: data, relativeTo: nil) {
+                return NSItemProvider(contentsOf: url) ?? NSItemProvider(object: url as NSURL)
+            }
+            if let data = first[.string], let text = String(data: data, encoding: .utf8) {
+                return NSItemProvider(object: text as NSString)
+            }
+            let provider = NSItemProvider()
+            for type in [NSPasteboard.PasteboardType.png, .tiff] {
+                guard let data = first[type] else { continue }
+                provider.registerDataRepresentation(forTypeIdentifier: type.rawValue, visibility: .all) { done in
+                    done(data, nil)
+                    return nil
+                }
+            }
+            return provider
+        }
     }
 
     static let limit = 10
     /// Больше не запоминаем, чтобы не держать в памяти огромные картинки.
     private static let maxBytes = 25 * 1024 * 1024
 
-    private(set) var entries: [Entry] = []
+    @Published private(set) var entries: [Entry] = []
     private var lastChange = NSPasteboard.general.changeCount
     private var timer: Timer?
 

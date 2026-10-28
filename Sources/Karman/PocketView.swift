@@ -41,6 +41,8 @@ struct PocketView: View {
             Group {
                 if pocket.isTargeted {
                     DropTargets(pocket: pocket)
+                } else if pocket.showsClipboard {
+                    ClipboardList(pocket: pocket, history: .shared)
                 } else if pocket.items.isEmpty {
                     Text("Перетащите сюда")
                         .font(.system(size: 13, weight: .medium))
@@ -63,7 +65,12 @@ struct PocketView: View {
                         RoundButton(symbol: "chevron.backward", help: "Свернуть в стопку") { actions.toggleExpanded() }
                     }
                     Spacer()
-                    if pocket.expanded {
+                    if pocket.showsClipboard {
+                        Text("Скопировано")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.75))
+                        Spacer()
+                    } else if pocket.expanded {
                         Text(pocket.selection.isEmpty ? pocket.title
                              : "Выбрано: \(pocket.selection.count)")
                             .font(.system(size: 11, weight: .semibold))
@@ -71,13 +78,17 @@ struct PocketView: View {
                             .lineLimit(1)
                         Spacer()
                     }
+                    RoundButton(symbol: pocket.showsClipboard ? "tray" : "doc.on.clipboard",
+                                help: pocket.showsClipboard ? "Назад к карману" : "Последние копирования") {
+                        pocket.showsClipboard.toggle()
+                    }
                     RoundButton(symbol: "chevron.down", help: "Ещё действия") { actions.showMenu() }
                 }
                 .background(WindowDragArea())
                 Spacer()
             }
             .padding(10)
-            .opacity(showsChrome || (pocket.expanded && !pocket.isTargeted) ? 1 : 0)
+            .opacity(showsChrome || ((pocket.expanded || pocket.showsClipboard) && !pocket.isTargeted) ? 1 : 0)
 
             if pocket.busy {
                 ProgressView()
@@ -150,6 +161,81 @@ struct DropTargets: View {
         }
         .padding(PocketLayout.inset)
         .animation(.easeOut(duration: 0.12), value: pocket.dropAction)
+    }
+}
+
+// MARK: Последние копирования
+
+struct ClipboardList: View {
+    @ObservedObject var pocket: Pocket
+    @ObservedObject var history: ClipboardHistory
+
+    var body: some View {
+        Group {
+            if history.entries.isEmpty {
+                Text(Settings.clipboardHistory ? "Скопируйте что-нибудь —\nпоявится здесь"
+                     : "История копирований\nвыключена в меню")
+                    .multilineTextAlignment(.center)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.4))
+            } else {
+                ScrollView {
+                    VStack(spacing: 2) {
+                        ForEach(history.entries, id: \.id) { entry in
+                            ClipboardRow(pocket: pocket, history: history, entry: entry)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                .scrollIndicators(.never)
+                .padding(.top, 40)
+                .padding(.horizontal, 8)
+            }
+        }
+    }
+}
+
+struct ClipboardRow: View {
+    let pocket: Pocket
+    let history: ClipboardHistory
+    let entry: ClipboardHistory.Entry
+    @State private var hover = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: entry.symbol)
+                .font(.system(size: 11, weight: .medium))
+                .frame(width: 16)
+            Text(entry.title)
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 0)
+            if hover {
+                Button {
+                    pocket.ingest(from: history.pasteboard(for: entry))
+                    pocket.received = true
+                    pocket.showsClipboard = false
+                } label: {
+                    Image(systemName: "tray.and.arrow.down")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .buttonStyle(.plain)
+                .help("Положить в карман")
+            }
+        }
+        .foregroundStyle(.white.opacity(hover ? 1 : 0.8))
+        .padding(.horizontal, 8)
+        .frame(height: 28)
+        .background(RoundedRectangle(cornerRadius: 8).fill(.white.opacity(hover ? 0.14 : 0.05)))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            history.restore(entry)
+            pocket.showToast("Снова в буфере — ⌘V", symbol: "doc.on.clipboard")
+        }
+        .onDrag { entry.itemProvider() }
+        .onHover { hover = $0 }
+        .help("Клик — скопировать снова, можно перетащить")
     }
 }
 

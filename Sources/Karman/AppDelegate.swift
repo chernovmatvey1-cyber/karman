@@ -5,7 +5,7 @@ import ServiceManagement
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let detector = ShakeDetector()
-    private let clipboard = ClipboardHistory()
+    private let clipboard = ClipboardHistory.shared
     private var hotKeys: [HotKey] = []
     private var controllers: [PocketController] = []
     private let maxPockets = 8
@@ -24,13 +24,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         detector.start()
         clipboard.start()
 
-        // ⌃⌥D — карман под курсором, ⌃⌥S — скриншот сразу в карман, ⌃⌥V — последние копирования.
+        // ⌃⌥D — карман под курсором, ⌃⌥S — скриншот сразу в карман,
+        // ⌃⌘V (и ⌃⌥V) — последние копирования списком у курсора.
+        // ⌘V с пробелом занять нельзя: ⌘V сразу вставляет, а ⌘-пробел — это Spotlight.
         hotKeys = [
             HotKey(keyCode: kVK_ANSI_D, modifiers: controlKey | optionKey) { [weak self] in
                 self?.summonPocket(at: NSEvent.mouseLocation)
             },
             HotKey(keyCode: kVK_ANSI_S, modifiers: controlKey | optionKey) { [weak self] in
                 self?.screenshotToPocket()
+            },
+            HotKey(keyCode: kVK_ANSI_V, modifiers: controlKey | cmdKey) { [weak self] in
+                self?.showClipboardMenu()
             },
             HotKey(keyCode: kVK_ANSI_V, modifiers: controlKey | optionKey) { [weak self] in
                 self?.showClipboardMenu()
@@ -167,6 +172,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             toPocket.isAlternate = true
             menu.addItem(toPocket)
         }
+        menu.addItem(.separator())
+        menu.addItem(ClosureMenuItem("Открыть в кармане", symbol: "tray") { [weak self] in
+            self?.summonPocket(at: NSEvent.mouseLocation)?.pocket.showsClipboard = true
+        })
         menu.addItem(ClosureMenuItem("Очистить историю", symbol: "trash") { [weak self] in self?.clipboard.clear() })
     }
 
@@ -247,7 +256,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
         let history = NSMenuItem(title: "Последние копирования", action: nil, keyEquivalent: "v")
-        history.keyEquivalentModifierMask = [.control, .option]
+        history.keyEquivalentModifierMask = [.control, .command]
         history.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: nil)
         let historyMenu = NSMenu()
         historyMenu.autoenablesItems = false
