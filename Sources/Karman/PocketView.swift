@@ -7,12 +7,16 @@ protocol PocketActions: AnyObject {
     func remove(_ item: PocketItem)
     func toggleExpanded()
     func run(_ action: PocketAction)
+    func toggleClipboard()
+    func pick(_ entry: ClipboardHistory.Entry)
+    func keep(_ entry: ClipboardHistory.Entry)
 }
 
 /// Размеры, общие для SwiftUI и для расчёта зон в AppKit.
 enum PocketLayout {
     static let compact = NSSize(width: 206, height: 208)
     static let expanded = NSSize(width: 320, height: 396)
+    static let clipboard = NSSize(width: 320, height: 420)
     static let radius: CGFloat = 22
     static let inset: CGFloat = 10
     static let tilesHeight: CGFloat = 56
@@ -42,7 +46,7 @@ struct PocketView: View {
                 if pocket.isTargeted {
                     DropTargets(pocket: pocket)
                 } else if pocket.showsClipboard {
-                    ClipboardList(pocket: pocket, history: .shared)
+                    ClipboardList(history: .shared, actions: actions)
                 } else if pocket.items.isEmpty {
                     Text("Перетащите сюда")
                         .font(.system(size: 13, weight: .medium))
@@ -80,7 +84,7 @@ struct PocketView: View {
                     }
                     RoundButton(symbol: pocket.showsClipboard ? "tray" : "doc.on.clipboard",
                                 help: pocket.showsClipboard ? "Назад к карману" : "Последние копирования") {
-                        pocket.showsClipboard.toggle()
+                        actions.toggleClipboard()
                     }
                     RoundButton(symbol: "chevron.down", help: "Ещё действия") { actions.showMenu() }
                 }
@@ -167,8 +171,8 @@ struct DropTargets: View {
 // MARK: Последние копирования
 
 struct ClipboardList: View {
-    @ObservedObject var pocket: Pocket
     @ObservedObject var history: ClipboardHistory
+    let actions: PocketActions
 
     var body: some View {
         Group {
@@ -180,9 +184,9 @@ struct ClipboardList: View {
                     .foregroundStyle(.white.opacity(0.4))
             } else {
                 ScrollView {
-                    VStack(spacing: 2) {
-                        ForEach(history.entries, id: \.id) { entry in
-                            ClipboardRow(pocket: pocket, history: history, entry: entry)
+                    VStack(spacing: 4) {
+                        ForEach(Array(history.entries.enumerated()), id: \.element.id) { index, entry in
+                            ClipboardRow(entry: entry, number: index + 1, actions: actions)
                         }
                     }
                     .padding(.vertical, 4)
@@ -190,53 +194,84 @@ struct ClipboardList: View {
                 .scrollIndicators(.never)
                 .padding(.top, 40)
                 .padding(.horizontal, 8)
+                .padding(.bottom, 4)
             }
         }
     }
 }
 
 struct ClipboardRow: View {
-    let pocket: Pocket
-    let history: ClipboardHistory
     let entry: ClipboardHistory.Entry
+    let number: Int
+    let actions: PocketActions
     @State private var hover = false
 
+    private var caption: String {
+        let ago = RelativeDateTimeFormatter.ru.localizedString(for: entry.date, relativeTo: Date())
+        return [entry.app, entry.detail, ago].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: entry.symbol)
-                .font(.system(size: 11, weight: .medium))
-                .frame(width: 16)
-            Text(entry.title)
-                .font(.system(size: 11, weight: .medium))
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: 0)
-            if hover {
-                Button {
-                    pocket.ingest(from: history.pasteboard(for: entry))
-                    pocket.received = true
-                    pocket.showsClipboard = false
-                } label: {
-                    Image(systemName: "tray.and.arrow.down")
-                        .font(.system(size: 11, weight: .medium))
+        HStack(alignment: .top, spacing: 9) {
+            Group {
+                if let thumb = entry.thumbnail {
+                    Image(nsImage: thumb)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                } else {
+                    Image(systemName: entry.symbol)
+                        .font(.system(size: 12, weight: .medium))
                 }
-                .buttonStyle(.plain)
-                .help("Положить в карман")
+            }
+            .frame(width: 30, height: 30)
+            .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(entry.thumbnail == nil ? 0.08 : 0)))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(entry.preview)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.95))
+                    .lineLimit(entry.thumbnail == nil ? 3 : 1)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text(caption)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.45))
+                    .lineLimit(1)
+            }
+
+            VStack(spacing: 6) {
+                Text(number < 10 ? "\(number)" : "")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.35))
+                if hover {
+                    Button { actions.keep(entry) } label: {
+                        Image(systemName: "tray.and.arrow.down")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.85))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Положить в карман")
+                }
             }
         }
-        .foregroundStyle(.white.opacity(hover ? 1 : 0.8))
-        .padding(.horizontal, 8)
-        .frame(height: 28)
-        .background(RoundedRectangle(cornerRadius: 8).fill(.white.opacity(hover ? 0.14 : 0.05)))
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.white.opacity(hover ? 0.15 : 0.06)))
         .contentShape(Rectangle())
-        .onTapGesture {
-            history.restore(entry)
-            pocket.showToast("Снова в буфере — ⌘V", symbol: "doc.on.clipboard")
-        }
+        .onTapGesture { actions.pick(entry) }
         .onDrag { entry.itemProvider() }
         .onHover { hover = $0 }
-        .help("Клик — скопировать снова, можно перетащить")
+        .help("Клик — снова в буфер, потом ⌘V. Можно перетащить")
     }
+}
+
+extension RelativeDateTimeFormatter {
+    static let ru: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.locale = Locale(identifier: "ru_RU")
+        f.unitsStyle = .short
+        return f
+    }()
 }
 
 // MARK: Кнопка-кружок

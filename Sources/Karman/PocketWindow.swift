@@ -36,12 +36,16 @@ final class PocketController: NSObject {
     private var closing = false
     /// Карман вызван встряхиванием с файлом: исчезнет, если файл бросили мимо.
     var ephemeral = false
+    /// Открыт долгим ⌘ только ради копирований: закроется после выбора или клика мимо.
+    private var quickClipboard = false
+    private var outsideClick: Any?
     var onClose: ((PocketController) -> Void)?
     var onMoved: (() -> Void)?
 
     init(pocket: Pocket, origin: NSPoint) {
         self.pocket = pocket
-        let size = pocket.expanded ? Self.expandedSize : Self.compactSize
+        let size = pocket.showsClipboard ? PocketLayout.clipboard
+            : pocket.expanded ? Self.expandedSize : Self.compactSize
         let m = Self.margin
         panel = PocketPanel(frame: NSRect(origin: origin, size: size).insetBy(dx: -m, dy: -m))
         let root = NSView(frame: NSRect(origin: .zero, size: panel.frame.size))
@@ -146,6 +150,7 @@ final class PocketController: NSObject {
     func close() {
         guard !closing else { return }
         closing = true
+        stopWatchingOutsideClicks()
         NotificationCenter.default.removeObserver(self)
         if QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible {
             QLPreviewPanel.shared().orderOut(nil)
@@ -275,6 +280,59 @@ extension PocketController: PocketActions {
         withAnimation(.easeInOut(duration: 0.2)) { pocket.expanded = expanded }
         panel.setFrame(frame.insetBy(dx: -Self.margin, dy: -Self.margin), display: true, animate: true)
         pocket.onChange?()
+    }
+
+    // MARK: Последние копирования
+
+    func toggleClipboard() { setClipboard(!pocket.showsClipboard) }
+
+    /// Переключает карман на список копирований и обратно, подгоняя размер.
+    func setClipboard(_ on: Bool, quick: Bool = false) {
+        quickClipboard = on && quick
+        if quickClipboard { watchOutsideClicks() } else { stopWatchingOutsideClicks() }
+        guard on != pocket.showsClipboard else { return }
+        let size = on ? PocketLayout.clipboard : (pocket.expanded ? Self.expandedSize : Self.compactSize)
+        let old = pocketFrame
+        var frame = NSRect(x: old.midX - size.width / 2, y: old.maxY - size.height, width: size.width, height: size.height)
+        if let vf = (panel.screen ?? NSScreen.main)?.visibleFrame {
+            frame.origin.x = min(max(frame.minX, vf.minX + 8), vf.maxX - size.width - 8)
+            frame.origin.y = min(max(frame.minY, vf.minY + 8), vf.maxY - size.height - 8)
+        }
+        withAnimation(.easeInOut(duration: 0.2)) { pocket.showsClipboard = on }
+        panel.setFrame(frame.insetBy(dx: -Self.margin, dy: -Self.margin), display: true, animate: panel.isVisible)
+    }
+
+    /// Клик по записи: она снова в буфере, осталось нажать ⌘V.
+    func pick(_ entry: ClipboardHistory.Entry) {
+        ClipboardHistory.shared.restore(entry)
+        pocket.showToast("В буфере — нажмите ⌘V", symbol: "doc.on.clipboard")
+        guard quickClipboard else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in self?.finishQuick() }
+    }
+
+    func keep(_ entry: ClipboardHistory.Entry) {
+        pocket.ingest(from: ClipboardHistory.shared.pasteboard(for: entry))
+        pocket.received = true
+        setClipboard(false)
+    }
+
+    /// Быстрый список отработал: пустой карман уходит, с вещами — возвращается к ним.
+    private func finishQuick() {
+        guard quickClipboard else { return }
+        if pocket.items.isEmpty { close() } else { setClipboard(false) }
+    }
+
+    /// Клики в других приложениях приходят только в глобальный монитор — значит, мимо кармана.
+    private func watchOutsideClicks() {
+        guard outsideClick == nil else { return }
+        outsideClick = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            self?.finishQuick()
+        }
+    }
+
+    private func stopWatchingOutsideClicks() {
+        if let m = outsideClick { NSEvent.removeMonitor(m) }
+        outsideClick = nil
     }
 
     func showMenu() {
@@ -451,10 +509,17 @@ final class PocketContainerView: NSView {
 
     // Клавиши.
 
+    private static let digitKeys = [18, 19, 20, 21, 23, 22, 26, 28, 25]
+
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
         case 49: controller?.quickLook()                 // пробел
         case 53: controller?.close()                     // Esc
+        case _ where pocket?.showsClipboard == true && Self.digitKeys.contains(Int(event.keyCode)):
+            // 1–9: выбрать копирование по номеру.
+            let index = Self.digitKeys.firstIndex(of: Int(event.keyCode))!
+            let entries = ClipboardHistory.shared.entries
+            if index < entries.count { controller?.pick(entries[index]) }
         case 51, 117: pocket?.clear()                     // Delete
         default: super.keyDown(with: event)
         }

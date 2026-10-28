@@ -10,8 +10,16 @@ final class ClipboardHistory: ObservableObject {
         let id = UUID()
         /// Все типы каждого объекта буфера, чтобы вернуть копию в точности.
         let items: [[NSPasteboard.PasteboardType: Data]]
+        /// Одна строка для меню.
         let title: String
         let symbol: String
+        /// Начало текста в несколько строк — для кармана, чтобы было видно, что это.
+        let preview: String
+        /// «1 240 символов», «3 файла», «1920×1080».
+        let detail: String
+        /// Откуда скопировали.
+        let app: String?
+        let thumbnail: NSImage?
         let date = Date()
 
         /// Для перетаскивания записи из кармана: файл, текст или картинка.
@@ -107,26 +115,64 @@ final class ClipboardHistory: ObservableObject {
             }
             if !types.isEmpty { items.append(types) }
         }
-        guard !items.isEmpty, let (title, symbol) = describe(pb) else { return nil }
-        return Entry(items: items, title: title, symbol: symbol)
+        guard !items.isEmpty, let d = describe(pb) else { return nil }
+        return Entry(items: items, title: d.title, symbol: d.symbol, preview: d.preview, detail: d.detail,
+                     app: NSWorkspace.shared.frontmostApplication?.localizedName, thumbnail: d.thumbnail)
     }
 
-    /// Подпись в меню: начало текста, имя файла или «Картинка».
-    private static func describe(_ pb: NSPasteboard) -> (String, String)? {
+    private struct Description {
+        var title: String
+        var symbol: String
+        var preview: String
+        var detail: String
+        var thumbnail: NSImage?
+    }
+
+    /// Подпись в меню и превью для кармана: текст, имя файла или картинка.
+    private static func describe(_ pb: NSPasteboard) -> Description? {
         if let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
            let first = urls.first {
             let title = urls.count == 1 ? first.lastPathComponent
                 : "\(first.lastPathComponent) и ещё \(urls.count - 1)"
-            return (title, "doc")
+            let names = urls.prefix(3).map(\.lastPathComponent).joined(separator: "\n")
+            return Description(title: title, symbol: "doc", preview: names,
+                               detail: pluralRu(urls.count, "файл", "файла", "файлов"),
+                               thumbnail: NSWorkspace.shared.icon(forFile: first.path))
         }
-        if pb.canReadItem(withDataConformingToTypes: NSImage.imageTypes) { return ("Картинка", "photo") }
+        if pb.canReadItem(withDataConformingToTypes: NSImage.imageTypes), let image = NSImage(pasteboard: pb) {
+            let rep = image.representations.first
+            let size = rep.map { "\($0.pixelsWide)×\($0.pixelsHigh)" } ?? ""
+            return Description(title: "Картинка \(size)", symbol: "photo", preview: "Картинка",
+                               detail: size, thumbnail: thumbnail(image))
+        }
         if let text = pb.string(forType: .string) {
-            let line = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
-            let title = line.trimmingCharacters(in: .whitespaces)
-            guard !title.isEmpty else { return nil }
-            let short = title.count > 50 ? String(title.prefix(50)) + "…" : title
-            return (short, text.hasPrefix("http") ? "link" : "text.alignleft")
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            // Пустые строки и лишние пробелы в превью только мешают.
+            let lines = trimmed.split(whereSeparator: \.isNewline)
+                .map { $0.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+                .filter { !$0.isEmpty }
+            let first = lines.first ?? trimmed
+            let title = first.count > 50 ? String(first.prefix(50)) + "…" : first
+            let preview = String(lines.prefix(4).joined(separator: "\n").prefix(240))
+            let isLink = !trimmed.contains(where: \.isWhitespace) && trimmed.hasPrefix("http")
+            return Description(title: title, symbol: isLink ? "link" : "text.alignleft", preview: preview,
+                               detail: isLink ? "Ссылка" : pluralRu(trimmed.count, "символ", "символа", "символов"))
         }
         return nil
+    }
+
+    /// Маленькая копия картинки, чтобы не держать в интерфейсе оригинал.
+    private static func thumbnail(_ image: NSImage) -> NSImage {
+        let side: CGFloat = 96
+        let s = image.size
+        guard s.width > 0, s.height > 0 else { return image }
+        let k = min(side / s.width, side / s.height, 1)
+        let size = NSSize(width: s.width * k, height: s.height * k)
+        let thumb = NSImage(size: size)
+        thumb.lockFocus()
+        image.draw(in: NSRect(origin: .zero, size: size))
+        thumb.unlockFocus()
+        return thumb
     }
 }

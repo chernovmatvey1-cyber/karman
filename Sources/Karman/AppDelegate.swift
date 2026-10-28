@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let detector = ShakeDetector()
     private let clipboard = ClipboardHistory.shared
+    private let commandHold = CommandHold()
     private var hotKeys: [HotKey] = []
     private var controllers: [PocketController] = []
     private let maxPockets = 8
@@ -23,6 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         detector.onShake = { [weak self] point, withFile in self?.summonPocket(at: point, ephemeral: withFile) }
         detector.start()
         clipboard.start()
+        commandHold.onHold = { [weak self] in self?.showClipboardPocket() }
+        commandHold.start()
 
         // ⌃⌥D — карман под курсором, ⌃⌥S — скриншот сразу в карман,
         // ⌃⌘V (и ⌃⌥V) — последние копирования списком у курсора.
@@ -145,6 +148,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         front?.activate()
     }
 
+    /// Подержали ⌘: карман со списком копирований прямо у курсора.
+    /// Окно не забирает фокус, поэтому ⌘V потом вставит туда, где вы были.
+    private func showClipboardPocket() {
+        if let open = controllers.first(where: { $0.pocket.showsClipboard }) {
+            open.move(centeredAt: NSEvent.mouseLocation)
+            return
+        }
+        let point = NSEvent.mouseLocation
+        if let empty = controllers.first(where: { $0.pocket.items.isEmpty }) {
+            empty.setClipboard(true, quick: true)
+            empty.move(centeredAt: point)
+            return
+        }
+        let pocket = Pocket()
+        pocket.showsClipboard = true
+        let origin = PocketController.origin(centeredAt: point, size: PocketLayout.clipboard)
+        let controller = open(pocket, at: origin, from: point)
+        controller.setClipboard(true, quick: true)
+    }
+
     /// Записи истории; с ⌥ вместо «скопировать» — «в карман».
     private func addClipboardItems(to menu: NSMenu) {
         guard Settings.clipboardHistory else {
@@ -174,7 +197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         menu.addItem(.separator())
         menu.addItem(ClosureMenuItem("Открыть в кармане", symbol: "tray") { [weak self] in
-            self?.summonPocket(at: NSEvent.mouseLocation)?.pocket.showsClipboard = true
+            self?.summonPocket(at: NSEvent.mouseLocation)?.setClipboard(true)
         })
         menu.addItem(ClosureMenuItem("Очистить историю", symbol: "trash") { [weak self] in self?.clipboard.clear() })
     }
@@ -284,6 +307,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(ClosureMenuItem("Убирать из кармана после перетаскивания", state: Settings.removeAfterDrag) {
             Settings.removeAfterDrag.toggle()
+        })
+        menu.addItem(ClosureMenuItem("Копирования по долгому ⌘", state: Settings.holdCommand) {
+            Settings.holdCommand.toggle()
         })
         menu.addItem(ClosureMenuItem("Запоминать копирования", state: Settings.clipboardHistory) { [weak self] in
             Settings.clipboardHistory.toggle()

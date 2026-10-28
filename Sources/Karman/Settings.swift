@@ -61,6 +61,12 @@ enum Settings {
         set { d.set(newValue, forKey: "clipboardHistory") }
     }
 
+    /// Подержать ⌘ — открыть последние копирования.
+    static var holdCommand: Bool {
+        get { d.object(forKey: "holdCommand") as? Bool ?? true }
+        set { d.set(newValue, forKey: "holdCommand") }
+    }
+
     /// Звук при появлении кармана.
     static var playSound: Bool {
         get { d.object(forKey: "playSound") as? Bool ?? false }
