@@ -1,15 +1,17 @@
 #!/bin/zsh
-# Собирает Карман.app в build/ и, с флагом --install, ставит в /Applications.
+# Собирает Карман.app в build/; --install ставит в /Applications, --zip делает архив для релиза.
 set -euo pipefail
 cd "${0:A:h}/.."
 
-swift build -c release
-BIN=$(swift build -c release --show-bin-path)/Karman
+# Универсальная сборка: работает и на Apple Silicon, и на Intel.
+swift build -c release --triple arm64-apple-macosx14.0
+swift build -c release --triple x86_64-apple-macosx14.0
 APP="build/Карман.app"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/Karman"
+lipo -create .build/arm64-apple-macosx/release/Karman .build/x86_64-apple-macosx/release/Karman \
+  -output "$APP/Contents/MacOS/Karman"
 
 # Иконка из Resources/icon-1024.png.
 ICONSET=build/AppIcon.iconset
@@ -45,6 +47,12 @@ PLIST
 
 codesign --force --deep --sign - "$APP"
 echo "Собрано: $APP"
+
+# --zip: архив для релиза на GitHub (ditto сохраняет подпись и атрибуты).
+if [[ "${1:-}" == "--zip" ]]; then
+  ditto -c -k --keepParent "$APP" "build/Karman.zip"
+  echo "Архив: build/Karman.zip"
+fi
 
 if [[ "${1:-}" == "--install" ]]; then
   osascript -e 'quit app id "ru.chernov.karman"' 2>/dev/null || true
